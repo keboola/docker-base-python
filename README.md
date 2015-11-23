@@ -1,2 +1,3 @@
-# docker-base-python
-Base image for Python applications
+# Keboola Docker Base Python
+
+Base image for Python components.
