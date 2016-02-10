@@ -31,7 +31,7 @@ RUN set -x \
 	&& mkdir -p /usr/src/python \
 	&& curl -SL "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz" -o python.tar.xz \
 	&& curl -SL "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz.asc" -o python.tar.xz.asc \
-	&& curl -SL "http://curl.haxx.se/ca/cacert.pem" -o /usr/cacert.pem \
+	&& curl -SL "http://curl.haxx.se/ca/cacert.pem" -o /tmp/cacert.pem \
 	&& gpg --verify python.tar.xz.asc \
 	&& tar -xJC /usr/src/python --strip-components=1 -f python.tar.xz \
 	&& rm python.tar.xz* \
@@ -41,7 +41,7 @@ RUN set -x \
 	&& make install \
 	&& echo /usr/local/lib >> /etc/ld.so.conf \
 	&& ldconfig \
-	&& pip3 install --no-cache-dir --upgrade --ignore-installed --cert=/usr/cacert.pem pip==$PYTHON_PIP_VERSION \
+	&& pip3 install --no-cache-dir --upgrade --ignore-installed --cert=/tmp/cacert.pem pip==$PYTHON_PIP_VERSION \
 	&& find /usr/local \
 		\( -type d -a -name test -o -name tests \) \
 		-o \( -type f -a -name '*.pyc' -o -name '*.pyo' \) \
