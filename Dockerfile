@@ -1,4 +1,4 @@
-FROM keboola/base
+FROM quay.io/keboola/base
 MAINTAINER Ondrej Popelka <ondrej.popelka@keboola.com>
 
 RUN yum -y update && \
