@@ -1,57 +1,86 @@
-FROM quay.io/keboola/base
+FROM debian:8.6
 MAINTAINER Ondrej Popelka <ondrej.popelka@keboola.com>
 
-RUN yum -y update && \
-	yum -y install \
-		gcc \
-		make \
-		openssl-devel \
-		&& \
-	yum clean all
+# This is taken from https://github.com/docker-library/python/blob/master/3.5/Dockerfile
+FROM buildpack-deps:jessie
 
-# the instructions below are taken from https://github.com/docker-library/python/blob/e4a0ed26c086a48a75e9ea2b163c8262dcdff2af/3.5/Dockerfile
-# except that we use keboola/base as the base package
+# ensure local python is preferred over distribution python
+ENV PATH /usr/local/bin:$PATH
 
 # http://bugs.python.org/issue19846
 # > At the moment, setting "LANG=C" on a Linux system *fundamentally breaks Python 3*, and that's not OK.
 ENV LANG C.UTF-8
 
-# gpg: key F73C700D: public key "Larry Hastings <larry@hastings.org>" imported
-RUN gpg --keyserver ha.pool.sks-keyservers.net --recv-keys 97FC712E4C024BBEA48A61ED3A5CA953F73C700D
+# runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+		tcl \
+		tk \
+		gcc \
+		make \
+		libssl-dev \		
+	&& rm -rf /var/lib/apt/lists/*
 
-ENV PYTHON_VERSION 3.5.1
+ENV GPG_KEY 97FC712E4C024BBEA48A61ED3A5CA953F73C700D
+ENV PYTHON_VERSION 3.5.2
 
 # if this is called "PIP_VERSION", pip explodes with "ValueError: invalid truth value '<VERSION>'"
-ENV PYTHON_PIP_VERSION 8.0.1
+ENV PYTHON_PIP_VERSION 8.1.2
 
-# set default encoding to utf8
-ENV PYTHONIOENCODING utf-8
-
-RUN set -x \
+RUN set -ex \
+	&& buildDeps=' \
+		tcl-dev \
+		tk-dev \
+	' \
+	&& apt-get update && apt-get install -y $buildDeps --no-install-recommends && rm -rf /var/lib/apt/lists/* \
+	\
+	&& wget -O python.tar.xz "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz" \
+	&& wget -O python.tar.xz.asc "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz.asc" \
+	&& export GNUPGHOME="$(mktemp -d)" \
+	&& gpg --keyserver ha.pool.sks-keyservers.net --recv-keys "$GPG_KEY" \
+	&& gpg --batch --verify python.tar.xz.asc python.tar.xz \
+	&& rm -r "$GNUPGHOME" python.tar.xz.asc \
 	&& mkdir -p /usr/src/python \
-	&& curl -SL "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz" -o python.tar.xz \
-	&& curl -SL "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz.asc" -o python.tar.xz.asc \
-	&& curl -SL "http://curl.haxx.se/ca/cacert.pem" -o /tmp/cacert.pem \
-	&& gpg --verify python.tar.xz.asc \
 	&& tar -xJC /usr/src/python --strip-components=1 -f python.tar.xz \
-	&& rm python.tar.xz* \
+	&& rm python.tar.xz \
+	\
 	&& cd /usr/src/python \
-	&& ./configure --enable-shared --enable-unicode=ucs4 \
+	&& ./configure \
+		--enable-loadable-sqlite-extensions \
+		--enable-shared \
 	&& make -j$(nproc) \
 	&& make install \
-	&& echo /usr/local/lib >> /etc/ld.so.conf \
 	&& ldconfig \
-	&& pip3 install --no-cache-dir --upgrade --ignore-installed --cert=/tmp/cacert.pem pip==$PYTHON_PIP_VERSION \
-	&& find /usr/local \
-		\( -type d -a -name test -o -name tests \) \
-		-o \( -type f -a -name '*.pyc' -o -name '*.pyo' \) \
-		-exec rm -rf '{}' + \
-	&& rm -rf /usr/src/python
+	\
+# explicit path to "pip3" to ensure distribution-provided "pip3" cannot interfere
+	&& if [ ! -e /usr/local/bin/pip3 ]; then : \
+		&& wget -O /tmp/get-pip.py 'https://bootstrap.pypa.io/get-pip.py' \
+		&& python3 /tmp/get-pip.py "pip==$PYTHON_PIP_VERSION" \
+		&& rm /tmp/get-pip.py \
+	; fi \
+# we use "--force-reinstall" for the case where the version of pip we're trying to install is the same as the version bundled with Python
+# ("Requirement already up-to-date: pip==8.1.2 in /usr/local/lib/python3.6/site-packages")
+# https://github.com/docker-library/python/pull/143#issuecomment-241032683
+	&& pip3 install --no-cache-dir --upgrade --force-reinstall "pip==$PYTHON_PIP_VERSION" \
+# then we use "pip list" to ensure we don't have more than one pip version installed
+# https://github.com/docker-library/python/pull/100
+	&& [ "$(pip list |tac|tac| awk -F '[ ()]+' '$1 == "pip" { print $2; exit }')" = "$PYTHON_PIP_VERSION" ] \
+	\
+	&& find /usr/local -depth \
+		\( \
+			\( -type d -a -name test -o -name tests \) \
+			-o \
+			\( -type f -a -name '*.pyc' -o -name '*.pyo' \) \
+		\) -exec rm -rf '{}' + \
+	&& apt-get purge -y --auto-remove $buildDeps \
+	&& rm -rf /usr/src/python ~/.cache
 
 # make some useful symlinks that are expected to exist
 RUN cd /usr/local/bin \
-	&& ln -s easy_install-3.5 easy_install \
+	&& { [ -e easy_install ] || ln -s easy_install-* easy_install; } \
 	&& ln -s idle3 idle \
 	&& ln -s pydoc3 pydoc \
 	&& ln -s python3 python \
-	&& ln -s python-config3 python-config
+	&& ln -s python3-config python-config
+
+# set default encoding to utf8
+ENV PYTHONIOENCODING utf-8
