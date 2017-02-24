@@ -17,7 +17,8 @@ RUN apt-get update && apt-get upgrade && apt-get install -y --no-install-recomme
 		tk \
 		gcc \
 		make \
-		libssl-dev \		
+		libssl-dev \
+		libgeos-c1 \		
 	&& rm -rf /var/lib/apt/lists/*
 
 ENV GPG_KEY 97FC712E4C024BBEA48A61ED3A5CA953F73C700D
