@@ -1,3 +1,3 @@
-# Keboola Docker Base Python
+# Deprecated
 
-Base image for Python components.
+Use https://github.com/keboola/docker-custom-python/ or https://github.com/keboola/python-transformation
